@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Live Total Projection</title>
+<style>
+  :root { --pad: 14px; --radius: 12px; --maxw: 760px; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background:#0b0e14; color:#f1f5f9; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 24px var(--pad) 56px; }
+  .card { background:#111827; border:1px solid #1f2937; border-radius: var(--radius); padding: 18px; margin-bottom: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
+  h1 { font-size: 1.4rem; margin: 0 0 10px; }
+  h2 { font-size: 1.1rem; margin: 0 0 8px; color:#cbd5e1; }
+  label { display:block; font-size:.9rem; margin: 10px 0 6px; color:#cbd5e1; }
+  input, select { width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0b1220; color:#e5e7eb; }
+  .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  .row3 { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; }
+  .btn { margin-top:14px; width:100%; padding:12px; border-radius:10px; border:none; background:#10b981; color:#041b11; font-weight:700; font-size:1rem; }
+  .btn:active { transform: translateY(1px); }
+  .out { font-feature-settings: "tnum" 1, "lnum" 1; }
+  .kpi { display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; }
+  .pill { background:#0b1220; border:1px solid #334155; border-radius: 10px; padding:12px; }
+  .muted { color:#94a3b8; font-size:.9rem; }
+  .good { color:#34d399; }
+  .bad { color:#f87171; }
+  .warn { color:#fbbf24; }
+  footer { opacity:.7; font-size:.85rem; margin-top:24px; }
+  @media (min-width:720px){ .kpi{grid-template-columns: repeat(4, 1fr);} }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Live Total Projection</h1>
+      <div class="muted">Client-side (no backend). Add to Home Screen for a native feel.</div>
+    </div>
+
+    <div class="card">
+      <h2>Inputs</h2>
+      <label>League</label>
+      <select id="league">
+        <option value="CBB" selected>College Basketball (40 min)</option>
+        <option value="NBA">NBA (48 min)</option>
+      </select>
+
+      <div class="row">
+        <div>
+          <label>Home Score</label>
+          <input id="home" type="number" inputmode="numeric" value="81" />
+        </div>
+        <div>
+          <label>Away Score</label>
+          <input id="away" type="number" inputmode="numeric" value="67" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Time Remaining (MM:SS)</label>
+          <input id="time" type="text" placeholder="e.g., 3:52" value="3:52" />
+        </div>
+        <div>
+          <label>Market Total (optional)</label>
+          <input id="market" type="number" inputmode="decimal" step="0.5" placeholder="e.g., 158.5" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Slowdown Sensitivity</label>
+          <select id="slowdown">
+            <option value="auto" selected>Auto (margin + time based)</option>
+            <option value="off">Off</option>
+            <option value="mild">Mild (-3%)</option>
+            <option value="strong">Strong (-10%)</option>
+          </select>
+        </div>
+        <div>
+          <label>Threshold (edge to flag play)</label>
+          <select id="thresh">
+            <option value="cbb" selected>CBB ±3 pts</option>
+            <option value="nba">NBA ±4 pts</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn" id="go">Project</button>
+    </div>
+
+    <div class="card out" id="output" style="display:none;">
+      <h2>Results</h2>
+      <div class="kpi">
+        <div class="pill">
+          <div class="muted">Naive Projection</div>
+          <div id="naive" style="font-size:1.3rem;"></div>
+        </div>
+        <div class="pill">
+          <div class="muted">Adjusted Projection</div>
+          <div id="adjusted" style="font-size:1.3rem;"></div>
+        </div>
+        <div class="pill">
+          <div class="muted">Slowdown Applied</div>
+          <div id="slowpct" style="font-size:1.2rem;"></div>
+        </div>
+        <div class="pill">
+          <div class="muted">Recommendation</div>
+          <div id="rec" style="font-size:1.1rem;"></div>
+        </div>
+      </div>
+
+      <div class="card" id="marketRow" style="margin-top:14px; display:none;">
+        <h2>vs Market</h2>
+        <div class="row3">
+          <div>
+            <div class="muted">Market Total</div>
+            <div id="mkt" style="font-size:1.1rem;"></div>
+          </div>
+          <div>
+            <div class="muted">Edge (Adj − Market)</div>
+            <div id="edge" style="font-size:1.1rem;"></div>
+          </div>
+          <div>
+            <div class="muted">Signal</div>
+            <div id="signal" style="font-size:1.1rem;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:8px;">
+        Rule of thumb: CBB flag if |edge| ≥ 3; NBA flag if |edge| ≥ 4. Auto-slowdown scales with time & margin.
+      </div>
+    </div>
+
+    <footer class="wrap">
+      Built for mobile. No data sent anywhere. Save as PWA by “Add to Home Screen”.
+    </footer>
+  </div>
+
+<script>
+function parseMMSS(s) {
+  if (!s) return 0;
+  const parts = s.split(":").map(Number);
+  if (parts.length === 1) return parts[0];
+  const [m, sec] = parts;
+  return m + (sec||0)/60;
+}
+function fmt(n){ return Number.isFinite(n)? n.toFixed(1) : "—"; }
+
+function compute({league, home, away, mmss, slowdown, thresh}) {
+  const gameMinutes = league === "NBA" ? 48 : 40;
+  const minsLeft = parseMMSS(mmss);
+  const minsElapsed = gameMinutes - minsLeft;
+
+  const scoreNow = home + away;
+  if (minsElapsed <= 0) return {err:"Not enough time elapsed."};
+
+  const paceFactor = gameMinutes / minsElapsed;
+  const naive = scoreNow * paceFactor;
+
+  // Auto slowdown %
+  const margin = Math.abs(home - away);
+  let adjPct = 0;
+  if (slowdown === "off") adjPct = 0;
+  else if (slowdown === "mild") adjPct = -0.03;
+  else if (slowdown === "strong") adjPct = -0.10;
+  else {
+    // auto: more slowdown late and with larger margin
+    if (minsLeft < 5) {
+      // up to -10% when margin large
+      const blowoutFactor = Math.min(1, margin / 16); // 0..1 above ~16 pts
+      adjPct = -0.05 - 0.05 * blowoutFactor; // -5% to -10%
+    } else if (minsLeft < 10) {
+      adjPct = -0.03;
+    } else {
+      adjPct = 0;
+    }
+  }
+  const adjusted = naive * (1 + adjPct);
+
+  const threshold = thresh === "nba" ? 4 : 3;
+
+  return { gameMinutes, minsLeft, naive, adjusted, adjPct, threshold };
+}
+
+function verdict(edge, threshold){
+  if (!Number.isFinite(edge)) return "—";
+  if (edge >= threshold) return "Over lean";
+  if (edge <= -threshold) return "Under lean";
+  return "No play";
+}
+
+function hydrateFromHash(){
+  if (!location.hash) return;
+  try{
+    const obj = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+    if (obj.league) document.getElementById("league").value = obj.league;
+    if (obj.home) document.getElementById("home").value = obj.home;
+    if (obj.away) document.getElementById("away").value = obj.away;
+    if (obj.time) document.getElementById("time").value = obj.time;
+    if (obj.market) document.getElementById("market").value = obj.market;
+    if (obj.slowdown) document.getElementById("slowdown").value = obj.slowdown;
+    if (obj.thresh) document.getElementById("thresh").value = obj.thresh;
+  }catch(e){}
+}
+
+function updateHash(){
+  const payload = {
+    league: document.getElementById("league").value,
+    home: document.getElementById("home").value,
+    away: document.getElementById("away").value,
+    time: document.getElementById("time").value,
+    market: document.getElementById("market").value,
+    slowdown: document.getElementById("slowdown").value,
+    thresh: document.getElementById("thresh").value
+  };
+  location.hash = encodeURIComponent(JSON.stringify(payload));
+}
+
+document.getElementById("go").addEventListener("click", () => {
+  const league = document.getElementById("league").value;
+  const home = parseFloat(document.getElementById("home").value || "0");
+  const away = parseFloat(document.getElementById("away").value || "0");
+  const mmss = document.getElementById("time").value;
+  const slowdown = document.getElementById("slowdown").value;
+  const thresh = document.getElementById("thresh").value;
+  const market = parseFloat(document.getElementById("market").value);
+
+  updateHash();
+
+  const res = compute({league, home, away, mmss, slowdown, thresh});
+  if (res.err){ alert(res.err); return; }
+
+  const { naive, adjusted, adjPct, threshold } = res;
+
+  document.getElementById("output").style.display = "block";
+  document.getElementById("naive").textContent = fmt(naive);
+  document.getElementById("adjusted").textContent = fmt(adjusted);
+  document.getElementById("slowpct").textContent = (adjPct*100).toFixed(1) + "%";
+
+  const mktRow = document.getElementById("marketRow");
+  if (Number.isFinite(market)) {
+    mktRow.style.display = "block";
+    const edge = adjusted - market;
+    document.getElementById("mkt").textContent = market.toFixed(1);
+    document.getElementById("edge").textContent = (edge>=0?"+":"") + edge.toFixed(1) + " pts";
+
+    const sig = verdict(edge, threshold);
+    document.getElementById("signal").textContent = sig;
+    document.getElementById("signal").className =
+      sig.includes("Over") ? "good" : sig.includes("Under") ? "bad" : "warn";
+    document.getElementById("rec").textContent = sig;
+    document.getElementById("rec").className =
+      sig.includes("Over") ? "good" : sig.includes("Under") ? "bad" : "warn";
+  } else {
+    mktRow.style.display = "none";
+    document.getElementById("rec").textContent = "—";
+    document.getElementById("rec").className = "warn";
+  }
+});
+
+// init
+hydrateFromHash();
+</script>
+</body>
+</html>
