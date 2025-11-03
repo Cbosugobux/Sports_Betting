@@ -1,134 +1,252 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Live Total Projection</title>
-<style>
-  body{font-family:-apple-system,system-ui,Roboto,Arial,sans-serif;margin:0;background:#0b0e14;color:#f1f5f9}
-  .wrap{max-width:760px;margin:auto;padding:24px 14px 64px}
-  .card{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.25)}
-  h1{font-size:1.4rem;margin:0 0 10px}
-  h2{font-size:1.1rem;margin:0 0 8px;color:#cbd5e1}
-  label{display:block;font-size:.9rem;margin:10px 0 6px;color:#cbd5e1}
-  input,select{width:100%;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#e5e7eb}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .btn{margin-top:14px;width:100%;padding:12px;border-radius:10px;border:none;background:#10b981;color:#041b11;font-weight:700;font-size:1rem}
-  .btn:active{transform:translateY(1px)}
-  .pill{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px;text-align:center}
-  .muted{color:#94a3b8;font-size:.9rem}
-  .good{color:#34d399}.bad{color:#f87171}.warn{color:#fbbf24}
-  .bar{height:8px;border-radius:6px;background:#1e293b;margin-top:6px;overflow:hidden}
-  .bar div{height:8px;border-radius:6px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Phoenix Picks — Live Total Trigger</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:900px;margin:24px auto;padding:0 12px}
+    h1{margin:0 0 8px}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+    label{display:block;font-size:14px;margin-bottom:4px}
+    input,select,button{width:100%;padding:8px;font-size:16px}
+    .card{border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #ccc;margin-right:8px}
+    .banner{padding:14px;border-radius:10px;margin-top:10px;font-weight:700}
+    .go{background:#e7f7ed;border:1px solid #9ad1ae;color:#0a6b2b}
+    .cautious{background:#fff6e5;border:1px solid #f1c27d;color:#7a4d00}
+    .nogo{background:#fdecec;border:1px solid #f5a3a3;color:#8a1f1f}
+    .muted{color:#666}
+    small{color:#555}
+    .right{float:right}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
+  </style>
 </head>
 <body>
-<div class="wrap">
+  <h1>Live Total Trigger — Phoenix Picks</h1>
+  <div class="muted">Walmart approach: consistent small edges + disciplined triggers.</div>
+
+  <!-- INPUTS -->
   <div class="card">
-    <h1>Live Total Projection (v2)</h1>
-    <div class="muted">Dynamic late-game pace adjustment • works offline</div>
+    <h3>Game + Market</h3>
+    <div class="grid-3">
+      <div>
+        <label>Sport</label>
+        <select id="sport">
+          <option value="nba" selected>NBA</option>
+          <option value="ncaab">NCAAB</option>
+          <option value="wnba">WNBA</option>
+          <option value="nfl">NFL</option>
+        </select>
+      </div>
+      <div>
+        <label>Book Live Total (L)</label>
+        <input id="book_line" type="number" step="0.5" value="216.5">
+      </div>
+      <div>
+        <label>Odds (American)</label>
+        <input id="odds_us" type="number" step="1" value="-112">
+      </div>
+    </div>
+
+    <h3 style="margin-top:16px">Game State</h3>
+    <div class="grid-4">
+      <div>
+        <label>Current Score (sum)</label>
+        <input id="score_sum" type="number" step="1" value="172">
+      </div>
+      <div>
+        <label>Time Remaining (mm:ss)</label>
+        <input id="time_left" type="text" value="08:00">
+      </div>
+      <div>
+        <label>Your Projected Final Total (P)</label>
+        <input id="proj_total" type="number" step="0.1" value="210.8">
+      </div>
+      <div>
+        <label>Confidence σ (full-game, pts) <small class="muted">(auto by sport)</small></label>
+        <input id="sigma_full" type="number" step="0.1" value="14">
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-top:12px">
+      <div>
+        <label>Bankroll ($)</label>
+        <input id="bankroll" type="number" step="1" value="500">
+      </div>
+      <div>
+        <label>Kelly Fraction</label>
+        <select id="kelly_frac">
+          <option value="0.33" selected>1/3 Kelly</option>
+          <option value="0.25">1/4 Kelly</option>
+          <option value="0.50">1/2 Kelly</option>
+          <option value="1.00">Full Kelly (aggressive)</option>
+        </select>
+      </div>
+      <div>
+        <label>Side</label>
+        <select id="side">
+          <option value="under" selected>Under</option>
+          <option value="over">Over</option>
+        </select>
+      </div>
+    </div>
   </div>
 
   <div class="card">
-    <h2>Inputs</h2>
-    <label>League</label>
-    <select id="league">
-      <option value="CBB" selected>College Basketball (40 min)</option>
-      <option value="NBA">NBA (48 min)</option>
-    </select>
-
-    <div class="row">
-      <div><label>Home Score</label><input id="home" type="number" value="81"/></div>
-      <div><label>Away Score</label><input id="away" type="number" value="67"/></div>
+    <h3>Context Filter (Volatility Flags)</h3>
+    <div class="grid-2">
+      <label><input type="checkbox" id="flag_injury"> Injury/Rotation: key usage or >20 MPG player OUT</label>
+      <label><input type="checkbox" id="flag_minutes"> Minutes swing ±20% vs norm</label>
+      <label><input type="checkbox" id="flag_pace"> Pace > 1.05× league or foul rate spike</label>
+      <label><input type="checkbox" id="flag_garbage"> Garbage time / blowout risk</label>
     </div>
-
-    <div class="row">
-      <div><label>Time Remaining (MM:SS)</label><input id="time" type="text" value="3:52"/></div>
-      <div><label>Market Total (optional)</label><input id="market" type="number" placeholder="158.5"/></div>
-    </div>
-
-    <button class="btn" id="go">Project</button>
+    <small class="muted">If any are checked → Volatility = High (halve Kelly in the calc).</small>
   </div>
 
-  <div class="card" id="output" style="display:none">
-    <h2>Results</h2>
-    <div class="row">
-      <div class="pill"><div class="muted">Naive Projection</div><div id="naive" style="font-size:1.3rem"></div></div>
-      <div class="pill"><div class="muted">Adjusted Projection</div><div id="adjusted" style="font-size:1.3rem"></div></div>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <div class="pill"><div class="muted">Slowdown Applied</div><div id="slowpct"></div></div>
-      <div class="pill"><div class="muted">Recommendation</div><div id="rec" style="font-size:1.1rem"></div><div class="bar"><div id="conf"></div></div></div>
-    </div>
-    <div class="row" id="marketRow" style="margin-top:14px;display:none">
-      <div class="pill"><div class="muted">Market Total</div><div id="mkt"></div></div>
-      <div class="pill"><div class="muted">Edge (Adj−Mkt)</div><div id="edge"></div></div>
-    </div>
-    <div class="muted" style="margin-top:8px">Auto-slowdown scales with time & margin; adds foul-fest boost when close under 2 min.</div>
+  <div class="card">
+    <button id="run">Run Trigger + Sizing</button>
+    <button id="prefill" class="right">Prefill defaults by sport</button>
   </div>
-</div>
 
-<script>
-function parseMMSS(s){if(!s)return 0;const p=s.split(":").map(Number);return p[0]+(p[1]||0)/60}
-function fmt(n){return Number.isFinite(n)?n.toFixed(1):"—"}
+  <!-- OUTPUTS -->
+  <div id="out" class="card" style="display:none">
+    <div id="banner" class="banner"></div>
+    <div class="grid-3" style="margin-top:10px">
+      <div><span class="pill">Edge (pts)</span> <b class="mono" id="edge_pts">–</b></div>
+      <div><span class="pill">EV%</span> <b class="mono" id="ev_pct">–</b></div>
+      <div><span class="pill">Model Win %</span> <b class="mono" id="p_model">–</b></div>
+    </div>
+    <div class="grid-3" style="margin-top:10px">
+      <div><span class="pill">Stake ($)</span> <b class="mono" id="stake">–</b></div>
+      <div><span class="pill">Volatility</span> <b class="mono" id="volatility">–</b></div>
+      <div><span class="pill">Implied (book)</span> <b class="mono" id="p_book">–</b></div>
+    </div>
+    <div style="margin-top:10px">
+      <small class="muted">z = (L − P) / σ<sub>remain</sub>, σ<sub>remain</sub> = σ<sub>full</sub> × √(t<sub>left</sub>/t<sub>full</sub>)</small>
+    </div>
+  </div>
 
-function dynamicAdjust({league,home,away,mmss}){
-  const totalMin=league==="NBA"?48:40;
-  const left=parseMMSS(mmss);const elapsed=totalMin-left;const score=home+away;
-  if(elapsed<=0)return{err:"Clock error"};
-  const pace=totalMin/elapsed;const naive=score*pace;
-  const margin=Math.abs(home-away);
-  // base slowdown curve
-  let adjPct=0;
-  if(left<4){adjPct=-0.06-0.005*margin;} // stronger late
-  else if(left<8){adjPct=-0.03;}
-  // foul-fest boost if close
-  if(left<2 && margin<=4)adjPct+=0.05;
-  const adjusted=naive*(1+adjPct);
-  return{naive,adjusted,adjPct};
-}
+  <script>
+    // --- helpers ---
+    function parseTimeMMSS(t){ // "mm:ss" -> minutes float
+      const [m,s] = t.split(":").map(x=>parseInt(x||"0",10));
+      return m + (s/60);
+    }
+    function phi(x){ // std normal CDF
+      // Abramowitz-Stegun approximation
+      const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+      const sign = x<0?-1:1; const z = Math.abs(x)/Math.sqrt(2);
+      const t = 1/(1+p*z);
+      const y = 1 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*Math.exp(-z*z);
+      return 0.5*(1 + sign*y);
+    }
+    function usToDecimal(us){
+      return us>=0 ? 1 + (100/us) : 1 + (Math.abs(us)/100);
+    }
+    function impliedFromUS(us){
+      return us>=0 ? 100/(us+100) : Math.abs(us)/(Math.abs(us)+100);
+    }
 
-function verdict(edge,thr){
-  if(!Number.isFinite(edge))return["—","warn",0];
-  const abs=Math.abs(edge);
-  if(edge>=thr)return["Over lean","good",Math.min(abs/6,1)];
-  if(edge<=-thr)return["Under lean","bad",Math.min(abs/6,1)];
-  return["No play","warn",abs/6];
-}
+    // full-game durations (minutes)
+    const FULL_MIN = { nba:48, ncaab:40, wnba:40, nfl:60 };
 
-document.getElementById("go").onclick=()=>{
-  const league=document.getElementById("league").value;
-  const home=+document.getElementById("home").value;
-  const away=+document.getElementById("away").value;
-  const mmss=document.getElementById("time").value;
-  const market=parseFloat(document.getElementById("market").value);
-  const res=dynamicAdjust({league,home,away,mmss});
-  if(res.err){alert(res.err);return;}
-  const {naive,adjusted,adjPct}=res;
-  document.getElementById("output").style.display="block";
-  document.getElementById("naive").textContent=fmt(naive);
-  document.getElementById("adjusted").textContent=fmt(adjusted);
-  document.getElementById("slowpct").textContent=(adjPct*100).toFixed(1)+"%";
-  const thr=league==="NBA"?4:3;
-  const mRow=document.getElementById("marketRow");
-  if(Number.isFinite(market)){
-    mRow.style.display="grid";
-    const edge=adjusted-market;
-    document.getElementById("mkt").textContent=fmt(market);
-    document.getElementById("edge").textContent=(edge>=0?"+":"")+fmt(edge);
-    const[v,cls,conf]=verdict(edge,thr);
-    document.getElementById("rec").textContent=v;
-    document.getElementById("rec").className=cls;
-    const bar=document.getElementById("conf");
-    bar.style.width=(conf*100)+"%";
-    bar.style.background=cls==="good"?"#34d399":cls==="bad"?"#f87171":"#fbbf24";
-  }else{
-    mRow.style.display="none";
-    document.getElementById("rec").textContent="Enter market for signal";
-    document.getElementById("rec").className="warn";
-    document.getElementById("conf").style.width="0";
-  }
-};
-</script>
+    // default full-game sigmas (tweak to your calibration)
+    const SIGMA_DEFAULT = { nba:14, ncaab:10, wnba:9, nfl:12 };
+
+    // point-diff trigger ladder by remaining minutes (basketball-ish heuristic)
+    function triggerPtsNeeded(sport, minsLeft){
+      if(sport === 'nfl'){
+        if(minsLeft > 30) return 10;
+        if(minsLeft > 15) return 9;
+        if(minsLeft > 7)  return 7;
+        return 6;
+      } else { // hoops
+        if(minsLeft > 10) return 7;
+        if(minsLeft > 6)  return 5;
+        if(minsLeft > 3)  return 4;
+        return 3;
+      }
+    }
+
+    function volatilityHigh(){
+      return ['flag_injury','flag_minutes','flag_pace','flag_garbage'].some(id=>document.getElementById(id).checked);
+    }
+
+    function prefill(){
+      const sport = document.getElementById('sport').value;
+      document.getElementById('sigma_full').value = SIGMA_DEFAULT[sport];
+      // quick common odds+lines just to demo
+      if(sport==='nba'){ document.getElementById('book_line').value=216.5; document.getElementById('odds_us').value=-112; }
+      if(sport==='ncaab'){ document.getElementById('book_line').value=149.5; document.getElementById('odds_us').value=-110; }
+      if(sport==='wnba'){ document.getElementById('book_line').value=164.5; document.getElementById('odds_us').value=-108; }
+      if(sport==='nfl'){ document.getElementById('book_line').value=44.5;  document.getElementById('odds_us').value=-110; }
+    }
+
+    document.getElementById('prefill').addEventListener('click', prefill);
+
+    document.getElementById('run').addEventListener('click', () => {
+      const sport = document.getElementById('sport').value;
+      const L = parseFloat(document.getElementById('book_line').value);
+      const P = parseFloat(document.getElementById('proj_total').value);
+      const oddsUS = parseFloat(document.getElementById('odds_us').value);
+      const scoreSum = parseFloat(document.getElementById('score_sum').value);
+      const minsLeft = parseTimeMMSS(document.getElementById('time_left').value);
+      const sigmaFull = parseFloat(document.getElementById('sigma_full').value || SIGMA_DEFAULT[sport]);
+      const side = document.getElementById('side').value; // 'under' or 'over'
+      const bankroll = parseFloat(document.getElementById('bankroll').value);
+      const kellyFrac = parseFloat(document.getElementById('kelly_frac').value);
+      const volHigh = volatilityHigh();
+
+      // time-scaled sigma
+      const tFull = FULL_MIN[sport] || 48;
+      const sigmaRemain = sigmaFull * Math.sqrt(Math.max(minsLeft, 0.1)/tFull);
+
+      // model win probability via Normal approx around mean P
+      // Under win prob = P(Total <= L) = Phi((L - P)/sigmaRemain)
+      const z = (L - P) / sigmaRemain;
+      const pUnder = phi(z);
+      const pOver  = 1 - pUnder;
+      const pModel = (side==='under') ? pUnder : pOver;
+
+      // edge in points & trigger ladder
+      const edgePts = Math.abs(P - L);
+      const need = triggerPtsNeeded(sport, minsLeft);
+
+      // book implied, EV, Kelly
+      const b = usToDecimal(oddsUS) - 1;          // profit per $1 risked
+      const q = 1 - pModel;
+      const fKelly = Math.max((b*pModel - q) / (b || 1), 0);  // guard divide by 0
+      const volMod = volHigh ? 0.5 : 1.0;
+      const stake = bankroll * fKelly * kellyFrac * volMod;
+      const evPct = (pModel*b - q) * 100;
+      const pBook = impliedFromUS(oddsUS) * 100;
+
+      // Recommendation banner
+      let recClass='nogo', recText='NO-GO';
+      if(edgePts >= need && pModel > 0.54){ recClass='go'; recText='GO'; }
+      else if(edgePts >= need-1 && pModel > 0.52){ recClass='cautious'; recText='CAUTIOUS GO'; }
+      // Extra caution near endgame with high volatility
+      if(volHigh && recClass==='go'){ recClass='cautious'; recText='CAUTIOUS GO (Volatile)'; }
+
+      // render
+      document.getElementById('out').style.display='block';
+      const banner = document.getElementById('banner');
+      banner.className = 'banner ' + recClass;
+      banner.textContent = `${recText} — ${side.toUpperCase()} ${L}`;
+
+      document.getElementById('edge_pts').textContent = edgePts.toFixed(1) + ' pts';
+      document.getElementById('ev_pct').textContent = evPct.toFixed(1) + '%';
+      document.getElementById('p_model').textContent = (pModel*100).toFixed(1) + '%';
+      document.getElementById('stake').textContent = '$' + (isFinite(stake)? stake.toFixed(2): '0.00');
+      document.getElementById('volatility').textContent = volHigh ? 'High' : 'Low';
+      document.getElementById('p_book').textContent = pBook.toFixed(1) + '%';
+    });
+
+    // initialize sigma by sport
+    prefill();
+  </script>
 </body>
 </html>
