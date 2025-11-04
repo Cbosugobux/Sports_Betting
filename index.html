@@ -1,9 +1,9 @@
-<!doctype html>
+ <!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Phoenix Picks — Live Total Trigger (v2)</title>
+  <title>Phoenix Picks — Live Total Trigger (v3)</title>
   <style>
     body{font-family:system-ui,sans-serif;max-width:980px;margin:24px auto;padding:0 12px}
     h1{margin:0 0 8px}
@@ -25,8 +25,8 @@
   </style>
 </head>
 <body>
-  <h1>Live Total Trigger — Phoenix Picks (v2)</h1>
-  <div class="muted">Auto projection from score+time with margin, volatility, and DK cutoff logic.</div>
+  <h1>Live Total Trigger — Phoenix Picks (v3)</h1>
+  <div class="muted">Auto projection from score+time with blended pace, margin/volatility, and DK cutoff logic. Projection is floored at current total.</div>
 
   <!-- MARKET + GAME -->
   <div class="card">
@@ -106,7 +106,7 @@
           <label class="inline"><input type="checkbox" id="flag_pace"> Pace/Foul spike</label>
           <label class="inline"><input type="checkbox" id="flag_garbage"> Garbage time risk</label>
         </div>
-        <small class="muted">Any checked → Volatility = High → halve Kelly stake.</small>
+        <small class="muted">Any checked → Volatility = High → halves Kelly stake (volatility modifier).</small>
       </div>
       <div>
         <div class="row">
@@ -133,7 +133,7 @@
       <div><span class="pill">Implied (book)</span> <b class="mono" id="p_book">–</b></div>
     </div>
     <div style="margin-top:10px" class="muted">
-      Uses pace projection with margin/foul adjustments. σ scales with time; triggers tighten after 5:30 and block after 4:00 (DK).
+      Blended pace early, margin/foul/garbage adjustments, σ scales with time, triggers tighten after 5:30 & block after 4:00 (DK). Projection is floored at current total to avoid impossible outputs.
     </div>
   </div>
 
@@ -141,11 +141,11 @@
     // -----------------------------
     // Constants / helpers
     // -----------------------------
-    const FULL_MIN = { nba:48, ncaab:40, wnba:40, nfl:60 };
-    const SIGMA_FULL = { nba:14, ncaab:10, wnba:9, nfl:12 }; // baseline full-game σ (pts)
+    const FULL_MIN   = { nba:48, ncaab:40, wnba:40, nfl:60 };
+    const SIGMA_FULL = { nba:14, ncaab:10, wnba:9,  nfl:12 };
+    const LEAGUE_TOTAL = { nba:226, ncaab:145, wnba:164, nfl:44 }; // for baseline pace
 
     const mmssToSec = t => { const [m,s]=(t||"0:0").split(":").map(x=>parseInt(x||"0",10)); return (m*60)+(s||0); };
-    const parseMMSS = t => mmssToSec(t)/60;
 
     function phi(x){ // std normal CDF (Abramowitz-Stegun)
       const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
@@ -156,11 +156,9 @@
     }
     function usToDecimal(us){ return us>=0 ? 1+(100/us) : 1+(Math.abs(us)/100); }
     function impliedFromUS(us){ return us>=0 ? 100/(us+100) : Math.abs(us)/(Math.abs(us)+100); }
-
     function volatilityHigh(){
       return ['flag_injury','flag_minutes','flag_pace','flag_garbage'].some(id=>document.getElementById(id).checked);
     }
-
     function sportIsBasketball(s){ return s==='nba' || s==='ncaab' || s==='wnba'; }
 
     // Trigger ladder (pts) by time left
@@ -181,9 +179,8 @@
     // Margin/foul/garbage adjustments to projected total
     function marginAdjustFactor(sport, margin, minsLeft, flags){
       if(!sportIsBasketball(sport)){
-        // simple NFL tweak
-        if(margin>=14 && minsLeft<=10) return 0.95;
-        if(margin<=3  && minsLeft<=5)  return 1.03;
+        if(margin>=14 && minsLeft<=10) return 0.95; // NFL: leading team bleeds clock
+        if(margin<=3  && minsLeft<=5)  return 1.03; // tight endgame timeouts/2-min drill
         return 1.00;
       }
       let f = 1.00;
@@ -191,40 +188,42 @@
       else if(margin >= 15 && minsLeft <= 6) f *= 0.92;
       if(margin <= 6 && minsLeft <= 3) f *= 1.05;
       if(margin <= 4 && minsLeft <= 2) f *= 1.08;
-
-      // Flags
-      if(flags.paceFoul) f *= 1.03;      // foul/pace spike pushes total up
-      if(flags.garbage)  f *= 0.95;      // garbage slows scoring
+      if(flags.paceFoul) f *= 1.03;  // foul/pace spike
+      if(flags.garbage)  f *= 0.95;  // garbage time slowdown
       return f;
     }
 
-    // Time-scaled σ; slightly inflate late-game volatility
+    // Time-scaled σ; slight late-game inflation
     function sigmaRemain(sport, minsLeft){
       const sigmaFull = SIGMA_FULL[sport] || 12;
       const tFull = FULL_MIN[sport] || 48;
-      const scaleTime = Math.sqrt(Math.max(minsLeft,0.1)/tFull); // less time -> smaller base σ
-      const lateInflate = 1.2 + 0.3*((tFull-(tFull-minsLeft))/tFull); // ~1.5 early -> ~1.2 late (we'll cap)
-      const s = sigmaFull * scaleTime * Math.max(1.0, Math.min(lateInflate, 1.5));
-      return s;
+      const base = sigmaFull * Math.sqrt(Math.max(Math.min(minsLeft, tFull), 0.1)/tFull);
+      const lateInflate = sportIsBasketball(sport) && minsLeft <= 6 ? 1.15 : 1.0;
+      return base * lateInflate;
     }
 
     // -----------------------------
     // Main run
     // -----------------------------
     document.getElementById("run").addEventListener("click", ()=>{
-      const sport = document.getElementById("sport").value;
-      const L = parseFloat(document.getElementById("book_line").value);
-      const oddsUS = parseFloat(document.getElementById("odds_us").value);
-      const hs = parseFloat(document.getElementById("home_score").value);
-      const as = parseFloat(document.getElementById("away_score").value);
+      const sport   = document.getElementById("sport").value;
+      const L       = parseFloat(document.getElementById("book_line").value);
+      const oddsUS  = parseFloat(document.getElementById("odds_us").value);
+      const hs      = parseFloat(document.getElementById("home_score").value);
+      const as      = parseFloat(document.getElementById("away_score").value);
+
       const rawSecsLeft = mmssToSec(document.getElementById("time_left").value);
-      const latencyAdj = document.getElementById("latency_adj").checked ? 10 : 0;
-      const secsLeft = Math.max(rawSecsLeft - latencyAdj, 0);
-      const minsLeft = secsLeft/60;
-      const side = document.getElementById("side").value;
+      const latencyAdj  = document.getElementById("latency_adj").checked ? 10 : 0;
+
+      // --- TIME CLAMP ---
+      const tFullSec = (FULL_MIN[sport] || 48) * 60;
+      const secsLeft = Math.max(Math.min(rawSecsLeft - latencyAdj, tFullSec), 0);
+      const minsLeft = secsLeft / 60;
+
+      const side     = document.getElementById("side").value;
       const bankroll = parseFloat(document.getElementById("bankroll").value);
-      const kellyFrac = parseFloat(document.getElementById("kelly_frac").value);
-      const dkGuard = document.getElementById("dk_guard").checked;
+      const kellyFrac= parseFloat(document.getElementById("kelly_frac").value);
+      const dkGuard  = document.getElementById("dk_guard").checked;
       const prepPing = document.getElementById("prep_ping").checked;
 
       const flags = {
@@ -234,38 +233,48 @@
       const volHigh = volatilityHigh();
 
       const tFull = FULL_MIN[sport] || 48;
-      const tPlayed = Math.max(tFull - minsLeft, 0.1);
-      const total = hs + as;
+      const tPlayed = Math.max(Math.min(tFull - minsLeft, tFull), 0.1);
+
+      // --- TOTALS & MARGIN ---
+      const total  = hs + as;
       const margin = Math.abs(hs - as);
 
-      // Baseline pace projection (no model): current points/min * full game
-      const currentRate = total / tPlayed;
-      let projFinal = currentRate * tFull;
+      // --- LEAGUE BASELINE & CURRENT RATE ---
+      const leagueRate  = (LEAGUE_TOTAL[sport] || (total / tPlayed)) / tFull; // pts/min baseline
+      const currentRate = total / tPlayed;                                     // pts/min current
 
-      // Margin/foul/garbage adjustments
-      const adjFactor = marginAdjustFactor(sport, margin, minsLeft, flags);
-      const projFinalAdj = projFinal * adjFactor;
+      // --- BLENDED RATE (stabilize early) ---
+      // weight ramps 0→1 across first 25% of game time
+      const w = Math.min(1, tPlayed / (0.25 * tFull));
+      const rate = w * currentRate + (1 - w) * leagueRate;
 
-      // Probability via Normal around projFinalAdj with time-scaled σ
-      const sigma = sigmaRemain(sport, minsLeft);
-      const z = (L - projFinalAdj) / sigma;
+      // --- BASE PROJECTION ---
+      let projFinal = rate * tFull;
+
+      // --- CONTEXT ADJUSTMENTS ---
+      const adjFactor   = marginAdjustFactor(sport, margin, minsLeft, flags);
+      let projFinalAdj  = Math.max(total, projFinal * adjFactor); // FLOOR at current total
+
+      // --- PROBABILITY ---
+      const sigma  = sigmaRemain(sport, minsLeft);
+      const z      = (L - projFinalAdj) / sigma;
       const pUnder = phi(z);
       const pModel = (side === 'under') ? pUnder : (1 - pUnder);
 
-      // EV & Kelly
-      const b = usToDecimal(oddsUS) - 1;
-      const q = 1 - pModel;
+      // --- EV & KELLY ---
+      const b      = usToDecimal(oddsUS) - 1;
+      const q      = 1 - pModel;
       const fKelly = Math.max((b*pModel - q) / (b || 1), 0);
       const volMod = volHigh ? 0.5 : 1.0;
-      const stake = bankroll * fKelly * kellyFrac * volMod;
-      const evPct = (pModel*b - q) * 100;
-      const pBook = impliedFromUS(oddsUS) * 100;
-      const edgePts = projFinalAdj - L;
+      const stake  = bankroll * fKelly * kellyFrac * volMod;
+      const evPct  = (pModel*b - q) * 100;
+      const pBook  = impliedFromUS(oddsUS) * 100;
+      const edgePts= projFinalAdj - L;
 
-      // Trigger logic
+      // --- TRIGGERS ---
       const baseNeed = triggerPtsNeeded(sport, minsLeft);
-      const tighten530to400 = (sportIsBasketball(sport) && secsLeft <= 330 && secsLeft > 240) ? 1 : 0; // +1 pt near DK cutoff
-      const lateTighten5 = (sportIsBasketball(sport) && secsLeft <= 300) ? 1 : 0; // +1 in final 5:00
+      const tighten530to400 = (sportIsBasketball(sport) && secsLeft <= 330 && secsLeft > 240) ? 1 : 0; // +1 near cutoff
+      const lateTighten5    = (sportIsBasketball(sport) && secsLeft <= 300) ? 1 : 0;                   // +1 in final 5:00
       const need = baseNeed + tighten530to400 + lateTighten5;
 
       let recClass = 'nogo', recText = 'NO-GO';
@@ -274,30 +283,32 @@
       if (sportIsBasketball(sport) && dkGuard && secsLeft <= 240) {
         recClass = 'nogo'; recText = 'NO-GO — DK window closed (< 4:00)';
       } else {
-        // stronger prob thresholds late
-        const probReq = (sportIsBasketball(sport) && secsLeft <= 300) ? 0.56 : 0.54;
-        if (Math.abs(edgePts) >= need && pModel > probReq) { recClass='go'; recText='GO'; }
-        else if (Math.abs(edgePts) >= (need-1) && pModel > (probReq-0.02)) { recClass='cautious'; recText='CAUTIOUS GO'; }
+        const probReq = (sportIsBasketball(sport) && secsLeft <= 300) ? 0.56 : 0.54; // stronger late
+        if (Math.abs(edgePts) >= need && pModel > probReq) {
+          recClass='go'; recText='GO';
+        } else if (Math.abs(edgePts) >= (need-1) && pModel > (probReq-0.02)) {
+          recClass='cautious'; recText='CAUTIOUS GO';
+        }
       }
 
-      // Optional prep ping ~5:00 (fires once if you click around that time)
+      // Optional prep ping ~5:00
       if (sportIsBasketball(sport) && prepPing && secsLeft<=300 && secsLeft>294) {
         try { if(window?.navigator?.vibrate) navigator.vibrate(120); } catch(e){}
         console.log("Prep: DK shuts off at 4:00 — line up your click now.");
       }
 
-      // Render
+      // --- RENDER ---
       document.getElementById("out").style.display = "block";
       const banner = document.getElementById("banner");
       banner.className = 'banner ' + recClass;
       banner.textContent = `${recText} — ${side.toUpperCase()} ${L}`;
 
       document.getElementById("proj_total").textContent = projFinalAdj.toFixed(1);
-      document.getElementById("edge_pts").textContent = (edgePts>=0?'+':'') + edgePts.toFixed(1);
-      document.getElementById("ev_pct").textContent = evPct.toFixed(1) + '%';
-      document.getElementById("p_model").textContent = (pModel*100).toFixed(1) + '%';
-      document.getElementById("stake").textContent = '$' + (isFinite(stake)? stake.toFixed(2) : '0.00');
-      document.getElementById("p_book").textContent = pBook.toFixed(1) + '%';
+      document.getElementById("edge_pts").textContent   = (edgePts>=0?'+':'') + edgePts.toFixed(1);
+      document.getElementById("ev_pct").textContent     = evPct.toFixed(1) + '%';
+      document.getElementById("p_model").textContent    = (pModel*100).toFixed(1) + '%';
+      document.getElementById("stake").textContent      = '$' + (isFinite(stake)? stake.toFixed(2) : '0.00');
+      document.getElementById("p_book").textContent     = pBook.toFixed(1) + '%';
     });
   </script>
 </body>
