@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Phoenix Picks — Live Total Trigger (v5)</title>
+  <title>Phoenix Picks — Live Total Trigger (v7)</title>
   <style>
     body{font-family:system-ui,sans-serif;max-width:1000px;margin:24px auto;padding:0 12px}
     h1{margin:0 0 8px}
@@ -29,8 +29,8 @@
   </style>
 </head>
 <body>
-  <h1>Live Total Trigger — Phoenix Picks (v5)</h1>
-  <div class="muted">Seconds-precision pace, adjust only remaining points, σ floor, prob clamp, DK cutoff, and Debug panel. Projection can never be below current total.</div>
+  <h1>Live Total Trigger — Phoenix Picks (v7)</h1>
+  <div class="muted">Half-aware pace. Adjustments apply to <b>remaining</b> points only; projection never below current total. σ floor + probability clamp, DK cutoff, conservative cushion/tilt, endgame foul bump.</div>
 
   <!-- MARKET + GAME -->
   <div class="card">
@@ -67,7 +67,7 @@
       </div>
       <div>
         <label>Time Remaining (mm:ss)</label>
-        <input id="time_left" type="text" value="02:47">
+        <input id="time_left" type="text" value="11:00">
       </div>
       <div>
         <label>Side</label>
@@ -92,8 +92,15 @@
           <option value="1.00">Full Kelly</option>
         </select>
       </div>
-      <div>
-        <label class="muted">—</label>
+      <div class="row">
+        <label class="inline"><input type="checkbox" id="auto_half" checked> Auto-Half</label>
+        <label class="inline">
+          Half:
+          <select id="half" style="width:auto">
+            <option value="H1">1st Half</option>
+            <option value="H2" selected>2nd Half</option>
+          </select>
+        </label>
         <button id="run">Run Trigger + Sizing</button>
       </div>
     </div>
@@ -155,18 +162,31 @@
     </div>
 
     <div style="margin-top:10px" class="muted">
-      Pace is computed in seconds to avoid rounding drift. Adjustments apply to <i>remaining</i> points only, then add current total.
-      σ has a hard floor and probability is clamped to avoid impossible EVs.
+      Half-aware: blends half baseline toward live pace as the half progresses. Conservative rules: +2.0pt cushion normally, +2.5 inside 5:00; UNDERS tilted +0.75, OVERS −0.50. Endgame foul bump inside 4:00 when margin ≤ 6.
     </div>
   </div>
 
   <script>
-    // -----------------------------
+    // =========================
     // Constants / helpers
-    // -----------------------------
+    // =========================
     const FULL_MIN      = { nba:48, ncaab:40, wnba:40, nfl:60 };
     const SIGMA_FULL    = { nba:14, ncaab:10, wnba:9,  nfl:12 };
-    const LEAGUE_TOTAL  = { nba:226, ncaab:145, wnba:164, nfl:44 }; // baseline for pace
+    const LEAGUE_TOTAL  = { nba:226, ncaab:145, wnba:164, nfl:44 }; // baseline total for pace
+
+    // Share of total scoring by half (tweak as you learn)
+    const HALF_SHARE = {
+      nba:  { H1: 0.49, H2: 0.51 },
+      ncaab:{ H1: 0.48, H2: 0.52 },
+      wnba: { H1: 0.49, H2: 0.51 },
+      nfl:  { H1: 0.50, H2: 0.50 }
+    };
+
+    // Conservative safety knobs
+    const CUSHION_BASE = 2.0;   // extra pts of edge required normally
+    const CUSHION_LATE = 2.5;   // extra pts required inside 5:00
+    const TILT_UNDER   = 0.75;  // bias projection upward for UNDERS
+    const TILT_OVER    = -0.50; // bias projection downward for OVERS
 
     const mmssToSec = t => {
       const [mStr,sStr] = (t||"0:0").split(":");
@@ -175,7 +195,7 @@
       return m*60 + Math.min(Math.max(s,0),59);
     };
 
-    function phi(x){ // std normal CDF
+    function phi(x){
       const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
       const sign = x<0?-1:1; const z = Math.abs(x)/Math.sqrt(2);
       const t = 1/(1+p*z);
@@ -219,6 +239,15 @@
       return f;
     }
 
+    // Endgame foul bump (basketball only) inside 4:00 if margin ≤ 6
+    function foulEndgameBumpPts(secsLeft, margin){
+      if (secsLeft > 240) return 0;
+      const m = Math.min(Math.max(margin,0), 6);
+      const closeness = 1 - (m/6);         // 1 when tie, 0 when 6-pt lead
+      const timeFactor = 1 - (secsLeft/240); // 0 at 4:00 → 1 at 0:00
+      return 3.0 * closeness * timeFactor; // up to +3.0 pts
+    }
+
     // Time-scaled σ with a hard floor + slight late-game inflation
     function sigmaRemain(sport, secsLeft){
       const sigmaFull = SIGMA_FULL[sport] || 12;
@@ -234,9 +263,9 @@
       tbody.innerHTML = rows.map(([k,v]) => `<tr><td>${k}</td><td class="mono">${v}</td></tr>`).join('');
     }
 
-    // -----------------------------
+    // =========================
     // Main run
-    // -----------------------------
+    // =========================
     document.getElementById("run").addEventListener("click", ()=>{
       const sport   = document.getElementById("sport").value;
       const L       = parseFloat(document.getElementById("book_line").value);
@@ -250,9 +279,19 @@
       // --- TIME (seconds precision) ---
       const tFullMin  = FULL_MIN[sport] || 48;
       const tFullSec  = tFullMin * 60;
+      const halfSec   = tFullSec / 2;
       const secsLeft  = Math.max(Math.min(rawSecsLeft - latencyAdj, tFullSec), 0);
       const secsPlay  = Math.max(Math.min(tFullSec - secsLeft, tFullSec-1), 1); // avoid 0
       const minsLeft  = secsLeft / 60;
+
+      // --- Half selection (auto or manual) ---
+      const autoHalf = document.getElementById("auto_half").checked;
+      let half = document.getElementById("half").value; // 'H1' or 'H2'
+      if (autoHalf){
+        // Infer half from time: if secsLeft > halfSec → still in 1st half, else 2nd half
+        half = (secsLeft > halfSec) ? 'H1' : 'H2';
+        document.getElementById("half").value = half; // reflect in UI
+      }
 
       const side     = document.getElementById("side").value;
       const bankroll = parseFloat(document.getElementById("bankroll").value);
@@ -271,19 +310,41 @@
       const total  = hs + as;                  // Current total (floor)
       const margin = Math.abs(hs - as);
 
-      // --- Pace (points per second) with blended early weight ---
-      const leagueRatePS = (LEAGUE_TOTAL[sport] || (total * 60 / tFullSec)) / tFullSec; // pts/sec baseline
-      const currentRatePS= total / secsPlay;                                            // pts/sec now
-      const w = Math.min(1, (secsPlay / tFullSec) / 0.25); // 0→1 over first 25% of game
-      const ratePS = w * currentRatePS + (1 - w) * leagueRatePS;
+      // --- Half-aware pace ---
+      // Derive seconds left/played in selected half
+      let secsLeftHalf, secsPlayHalf;
+      if (half === 'H1') {
+        secsLeftHalf = Math.min(secsLeft, halfSec);
+        secsPlayHalf = Math.max(halfSec - secsLeftHalf, 1);
+      } else { // H2
+        secsLeftHalf = Math.max(Math.min(secsLeft - halfSec, halfSec), 0);
+        secsPlayHalf = Math.max(halfSec - secsLeftHalf, 1);
+      }
 
-      // Projection if pace held constant
-      const projBase = ratePS * tFullSec;           // total points if same pace all game
-      const remainingBase = Math.max(projBase - total, 0); // pts left at current pace
+      // Baselines (pts/sec) for whole game & this half
+      const leagueRatePS_full = (LEAGUE_TOTAL[sport] || (total * 60 / tFullSec)) / tFullSec;
+      const share = (HALF_SHARE[sport] || {H1:0.5,H2:0.5})[half];
+      const leagueRatePS_half = (LEAGUE_TOTAL[sport] * share) / halfSec;
 
-      // Apply context to remaining only
+      // Current rate (pts/sec) from whole game
+      const currentRatePS_full = total / Math.max(secsPlay, 1);
+
+      // Blend toward half baseline early in the half, then trust live pace
+      const wHalf = Math.min(1, (secsPlayHalf / halfSec) / 0.25); // 0→1 over first 25% of the half
+      const ratePS = wHalf * currentRatePS_full + (1 - wHalf) * leagueRatePS_half;
+
+      // Remaining points if half-aware pace holds
+      const remainingBase = Math.max(ratePS * secsLeft, 0);
+
+      // Apply context factor to REMAINING points only
       const adjFactor = marginAdjustFactor(sport, margin, minsLeft, flags);
       let projFinalAdj = total + remainingBase * adjFactor;
+
+      // Conservative adjustments
+      if (sportIsBasketball(sport)) {
+        projFinalAdj += foulEndgameBumpPts(secsLeft, margin);                 // endgame fouls
+        projFinalAdj += (side === 'under') ? TILT_UNDER : TILT_OVER;          // tilt by side
+      }
 
       // Floor: never below current total
       projFinalAdj = Math.max(projFinalAdj, total);
@@ -309,7 +370,10 @@
       const baseNeed = triggerPtsNeeded(sport, minsLeft);
       const tighten530to400 = (sportIsBasketball(sport) && secsLeft <= 330 && secsLeft > 240) ? 1 : 0;
       const lateTighten5    = (sportIsBasketball(sport) && secsLeft <= 300) ? 1 : 0;
-      const need = baseNeed + tighten530to400 + lateTighten5;
+      const cushion = sportIsBasketball(sport)
+        ? (secsLeft <= 300 ? CUSHION_LATE : CUSHION_BASE)
+        : 1.0;
+      const need = baseNeed + tighten530to400 + lateTighten5 + cushion;
 
       let recClass = 'nogo', recText = 'NO-GO';
       if (sportIsBasketball(sport) && dkGuard && secsLeft <= 240) {
@@ -328,6 +392,7 @@
       if (L < total) warnList.push("Book line below current total");
       if (volHigh)   warnList.push("High Volatility");
       if (latencyAdj && rawSecsLeft > secsLeft) warnList.push("Latency −10s applied");
+      warnList.push(`Half=${half}${autoHalf?' (auto)':''}`);
 
       // Optional prep ping ~5:00
       if (sportIsBasketball(sport) && prepPing && secsLeft<=300 && secsLeft>294) {
@@ -351,23 +416,35 @@
       document.getElementById("sigma_rem").textContent  = sigma.toFixed(2);
       document.getElementById("warns").textContent      = warnList.length ? warnList.join(' | ') : '—';
 
-      // --- Debug panel ---
+      // Debug
       document.getElementById("dbg").style.display = debugOn ? 'block' : 'none';
       if (debugOn){
+        const leagueRatePS_full = (LEAGUE_TOTAL[sport] || (total * 60 / (tFullMin*60))) / (tFullMin*60);
+        const shareDbg = (HALF_SHARE[sport] || {H1:0.5,H2:0.5})[half];
+        const leagueRatePS_halfDbg = (LEAGUE_TOTAL[sport] * shareDbg) / halfSec;
+        const currentRatePS_full = total / Math.max(secsPlay, 1);
+        const wHalf = Math.min(1, ( (half==='H1'? (halfSec - secsLeftHalfCalc(secsLeft, halfSec)): secsPlayHalfCalc(secsLeft, halfSec)) / halfSec) / 0.25);
+        // helper functions to echo debug values
+        function secsLeftHalfCalc(sl, hs){ return (half==='H1') ? Math.min(sl, hs) : Math.max(Math.min(sl - hs, hs), 0); }
+        function secsPlayHalfCalc(sl, hs){ return hs - secsLeftHalfCalc(sl, hs); }
         renderDebug([
-          ['secs_left', secsLeft],
-          ['secs_played', secsPlay],
-          ['current_rate_pts/sec', (currentRatePS||0).toFixed(5)],
-          ['league_rate_pts/sec', (leagueRatePS||0).toFixed(5)],
-          ['blend_w', w.toFixed(3)],
-          ['proj_base_total', projBase.toFixed(3)],
-          ['remaining_base', remainingBase.toFixed(3)],
+          ['half', half + (autoHalf?' (auto)':'')],
+          ['secs_left_game', secsLeft],
+          ['secs_played_game', secsPlay],
+          ['secs_left_half', (half==='H1'? Math.min(secsLeft, halfSec): Math.max(Math.min(secsLeft - halfSec, halfSec), 0))],
+          ['secs_played_half', (half==='H1'? halfSec - Math.min(secsLeft, halfSec): halfSec - Math.max(Math.min(secsLeft - halfSec, halfSec), 0))],
+          ['margin', margin],
+          ['league_rate_ps_full', (leagueRatePS_full||0).toFixed(6)],
+          ['league_rate_ps_half', (leagueRatePS_half||0).toFixed(6)],
+          ['current_rate_ps_full', (currentRatePS_full||0).toFixed(6)],
+          ['blend_w_half', wHalf.toFixed(3)],
+          ['remaining_base(ps*secs_left)', (ratePS*secsLeft).toFixed(3)],
           ['adj_factor', adjFactor.toFixed(3)],
           ['proj_final_adj', projFinalAdj.toFixed(3)],
           ['sigma', sigma.toFixed(3)],
           ['z', z.toFixed(3)],
           ['p_model', (pModel*100).toFixed(2)+'%'],
-          ['need_pts', need.toFixed(1)]
+          ['need_pts', need.toFixed(2)]
         ]);
       }
     });
