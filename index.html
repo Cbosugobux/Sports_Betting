@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Phoenix Picks — Live Total Trigger (v4)</title>
+  <title>Phoenix Picks — Live Total Trigger (v5)</title>
   <style>
-    body{font-family:system-ui,sans-serif;max-width:980px;margin:24px auto;padding:0 12px}
+    body{font-family:system-ui,sans-serif;max-width:1000px;margin:24px auto;padding:0 12px}
     h1{margin:0 0 8px}
     .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
     .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
@@ -23,11 +23,14 @@
     .row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
     .inline{display:inline-block;margin-right:14px}
     .warn{color:#8a1f1f}
+    table.debug{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+    .debug th,.debug td{border:1px solid #eee;padding:6px;text-align:left}
+    .debug th{background:#fafafa}
   </style>
 </head>
 <body>
-  <h1>Live Total Trigger — Phoenix Picks (v4)</h1>
-  <div class="muted">Blended pace early, margin/foul/garbage adjustments, late-game tightening, DK cutoff, and <b>projection never below current total</b>.</div>
+  <h1>Live Total Trigger — Phoenix Picks (v5)</h1>
+  <div class="muted">Seconds-precision pace, adjust only remaining points, σ floor, prob clamp, DK cutoff, and Debug panel. Projection can never be below current total.</div>
 
   <!-- MARKET + GAME -->
   <div class="card">
@@ -64,7 +67,7 @@
       </div>
       <div>
         <label>Time Remaining (mm:ss)</label>
-        <input id="time_left" type="text" value="11:00">
+        <input id="time_left" type="text" value="02:47">
       </div>
       <div>
         <label>Side</label>
@@ -114,6 +117,7 @@
           <label class="inline"><input type="checkbox" id="dk_guard" checked> DK 4:00 Guard</label>
           <label class="inline"><input type="checkbox" id="prep_ping" checked> 5:00 Prep Ping</label>
           <label class="inline"><input type="checkbox" id="latency_adj"> Latency adjust (−10s)</label>
+          <label class="inline"><input type="checkbox" id="debug"> Debug</label>
         </div>
         <small class="muted">Guard blocks GO < 4:00 (basketball). Latency subtracts ~10s from the time you enter.</small>
       </div>
@@ -142,8 +146,17 @@
       <div><span class="pill">Warnings</span> <b class="mono warn" id="warns">—</b></div>
     </div>
 
+    <div id="dbg" style="display:none">
+      <h4 class="muted">Debug</h4>
+      <table class="debug">
+        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+        <tbody id="dbg_rows"></tbody>
+      </table>
+    </div>
+
     <div style="margin-top:10px" class="muted">
-      Projection uses blended pace early; margin/foul/garbage adjusts only the <i>remaining</i> points, then adds current total. It cannot go below current total. Triggers tighten after 5:30 and block after 4:00 (DK).
+      Pace is computed in seconds to avoid rounding drift. Adjustments apply to <i>remaining</i> points only, then add current total.
+      σ has a hard floor and probability is clamped to avoid impossible EVs.
     </div>
   </div>
 
@@ -153,23 +166,26 @@
     // -----------------------------
     const FULL_MIN      = { nba:48, ncaab:40, wnba:40, nfl:60 };
     const SIGMA_FULL    = { nba:14, ncaab:10, wnba:9,  nfl:12 };
-    const LEAGUE_TOTAL  = { nba:226, ncaab:145, wnba:164, nfl:44 }; // baseline pace
+    const LEAGUE_TOTAL  = { nba:226, ncaab:145, wnba:164, nfl:44 }; // baseline for pace
 
-    const mmssToSec = t => { const [m,s]=(t||"0:0").split(":").map(x=>parseInt(x||"0",10)); return (m*60)+(s||0); };
+    const mmssToSec = t => {
+      const [mStr,sStr] = (t||"0:0").split(":");
+      const m = parseInt((mStr||"0").replace(/\D/g,''),10) || 0;
+      const s = parseInt((sStr||"0").replace(/\D/g,''),10) || 0;
+      return m*60 + Math.min(Math.max(s,0),59);
+    };
 
-    function phi(x){ // std normal CDF (Abramowitz-Stegun)
+    function phi(x){ // std normal CDF
       const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
       const sign = x<0?-1:1; const z = Math.abs(x)/Math.sqrt(2);
       const t = 1/(1+p*z);
       const y = 1 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*Math.exp(-z*z);
       return 0.5*(1 + sign*y);
     }
-    function usToDecimal(us){ return us>=0 ? 1+(100/us) : 1+(Math.abs(us)/100); }
-    function impliedFromUS(us){ return us>=0 ? 100/(us+100) : Math.abs(us)/(Math.abs(us)+100); }
-    function volatilityHigh(){
-      return ['flag_injury','flag_minutes','flag_pace','flag_garbage'].some(id=>document.getElementById(id).checked);
-    }
-    function sportIsBasketball(s){ return s==='nba' || s==='ncaab' || s==='wnba'; }
+    const usToDecimal = us => us>=0 ? 1+(100/us) : 1+(Math.abs(us)/100);
+    const impliedFromUS = us => us>=0 ? 100/(us+100) : Math.abs(us)/(Math.abs(us)+100);
+    const volatilityHigh = () => ['flag_injury','flag_minutes','flag_pace','flag_garbage'].some(id=>document.getElementById(id).checked);
+    const sportIsBasketball = s => (s==='nba'||s==='ncaab'||s==='wnba');
 
     // Trigger ladder (pts) by time left
     function triggerPtsNeeded(sport, minsLeft){
@@ -186,11 +202,11 @@
       }
     }
 
-    // Margin/foul/garbage adjustments to REMAINING points
+    // Margin/foul/garbage adjustment factor (applied to REMAINING points only)
     function marginAdjustFactor(sport, margin, minsLeft, flags){
       if(!sportIsBasketball(sport)){
-        if(margin>=14 && minsLeft<=10) return 0.95; // NFL: bleed clock
-        if(margin<=3  && minsLeft<=5)  return 1.03; // tight endgame
+        if(margin>=14 && minsLeft<=10) return 0.95;
+        if(margin<=3  && minsLeft<=5)  return 1.03;
         return 1.00;
       }
       let f = 1.00;
@@ -198,18 +214,24 @@
       else if(margin >= 15 && minsLeft <= 6) f *= 0.92;
       if(margin <= 6 && minsLeft <= 3) f *= 1.05;
       if(margin <= 4 && minsLeft <= 2) f *= 1.08;
-      if(flags.paceFoul) f *= 1.03;  // foul/pace spike
-      if(flags.garbage)  f *= 0.95;  // garbage-time slowdown
+      if(flags.paceFoul) f *= 1.03;
+      if(flags.garbage)  f *= 0.95;
       return f;
     }
 
-    // Time-scaled σ; slight late-game inflation (basketball)
-    function sigmaRemain(sport, minsLeft){
+    // Time-scaled σ with a hard floor + slight late-game inflation
+    function sigmaRemain(sport, secsLeft){
       const sigmaFull = SIGMA_FULL[sport] || 12;
-      const tFull     = FULL_MIN[sport] || 48;
-      const base = sigmaFull * Math.sqrt(Math.max(Math.min(minsLeft, tFull), 0.1)/tFull);
-      const lateInflate = sportIsBasketball(sport) && minsLeft <= 6 ? 1.15 : 1.0;
-      return base * lateInflate;
+      const tFullSec  = (FULL_MIN[sport] || 48) * 60;
+      const base = sigmaFull * Math.sqrt(Math.max(secsLeft, 1) / tFullSec);
+      const inflate = (sportIsBasketball(sport) && secsLeft <= 360) ? 1.25 : 1.0; // inflate inside 6:00
+      const s = base * inflate;
+      return Math.max(s, 3); // floor at 3 pts
+    }
+
+    function renderDebug(rows){
+      const tbody = document.getElementById('dbg_rows');
+      tbody.innerHTML = rows.map(([k,v]) => `<tr><td>${k}</td><td class="mono">${v}</td></tr>`).join('');
     }
 
     // -----------------------------
@@ -225,18 +247,19 @@
       const rawSecsLeft = mmssToSec(document.getElementById("time_left").value);
       const latencyAdj  = document.getElementById("latency_adj").checked ? 10 : 0;
 
-      // --- TIME CLAMP ---
-      const tFull   = FULL_MIN[sport] || 48;
-      const tFullSec= tFull * 60;
-      const secsLeft= Math.max(Math.min(rawSecsLeft - latencyAdj, tFullSec), 0);
-      const minsLeft= secsLeft / 60;
-      const tPlayed = Math.max(Math.min(tFull - minsLeft, tFull), 0.1);
+      // --- TIME (seconds precision) ---
+      const tFullMin  = FULL_MIN[sport] || 48;
+      const tFullSec  = tFullMin * 60;
+      const secsLeft  = Math.max(Math.min(rawSecsLeft - latencyAdj, tFullSec), 0);
+      const secsPlay  = Math.max(Math.min(tFullSec - secsLeft, tFullSec-1), 1); // avoid 0
+      const minsLeft  = secsLeft / 60;
 
       const side     = document.getElementById("side").value;
       const bankroll = parseFloat(document.getElementById("bankroll").value);
       const kellyFrac= parseFloat(document.getElementById("kelly_frac").value);
       const dkGuard  = document.getElementById("dk_guard").checked;
       const prepPing = document.getElementById("prep_ping").checked;
+      const debugOn  = document.getElementById("debug").checked;
 
       const flags = {
         paceFoul: document.getElementById("flag_pace").checked,
@@ -245,33 +268,32 @@
       const volHigh = volatilityHigh();
 
       // --- TOTALS & MARGIN ---
-      const total  = hs + as;                  // CURRENT TOTAL (cannot be exceeded downward)
+      const total  = hs + as;                  // Current total (floor)
       const margin = Math.abs(hs - as);
 
-      // --- BASELINE & CURRENT PACE (pts/min) ---
-      const leagueRate  = (LEAGUE_TOTAL[sport] || (total / tPlayed)) / tFull;
-      const currentRate = total / tPlayed;
+      // --- Pace (points per second) with blended early weight ---
+      const leagueRatePS = (LEAGUE_TOTAL[sport] || (total * 60 / tFullSec)) / tFullSec; // pts/sec baseline
+      const currentRatePS= total / secsPlay;                                            // pts/sec now
+      const w = Math.min(1, (secsPlay / tFullSec) / 0.25); // 0→1 over first 25% of game
+      const ratePS = w * currentRatePS + (1 - w) * leagueRatePS;
 
-      // Blended early: 0→1 across first 25% of game
-      const w = Math.min(1, tPlayed / (0.25 * tFull));
-      const rate = w * currentRate + (1 - w) * leagueRate;
+      // Projection if pace held constant
+      const projBase = ratePS * tFullSec;           // total points if same pace all game
+      const remainingBase = Math.max(projBase - total, 0); // pts left at current pace
 
-      // Projection if pace stayed identical
-      const projFinalBase = rate * tFull;
+      // Apply context to remaining only
+      const adjFactor = marginAdjustFactor(sport, margin, minsLeft, flags);
+      let projFinalAdj = total + remainingBase * adjFactor;
 
-      // --- CONTEXT ADJUSTMENTS: apply to REMAINING points only ---
-      const adjFactor    = marginAdjustFactor(sport, margin, minsLeft, flags);
-      const remainingBase= Math.max(projFinalBase - total, 0); // points left if pace holds
-      let   projFinalAdj = total + remainingBase * adjFactor;  // add back current total
-
-      // Floor: never below points already scored
+      // Floor: never below current total
       projFinalAdj = Math.max(projFinalAdj, total);
 
-      // --- PROBABILITY ---
-      const sigma  = sigmaRemain(sport, minsLeft);
+      // --- Probability (Normal approx) ---
+      const sigma  = sigmaRemain(sport, secsLeft);
       const z      = (L - projFinalAdj) / sigma;
-      const pUnder = phi(z);
-      const pModel = (side === 'under') ? pUnder : (1 - pUnder);
+      let pUnder   = phi(z);
+      let pModel   = (side === 'under') ? pUnder : (1 - pUnder);
+      pModel = Math.min(Math.max(pModel, 0.01), 0.995); // clamp 1%–99.5%
 
       // --- EV & KELLY ---
       const b      = usToDecimal(oddsUS) - 1;
@@ -283,19 +305,17 @@
       const pBook  = impliedFromUS(oddsUS) * 100;
       const edgePts= projFinalAdj - L;
 
-      // --- TRIGGERS ---
+      // --- Triggers ---
       const baseNeed = triggerPtsNeeded(sport, minsLeft);
-      const tighten530to400 = (sportIsBasketball(sport) && secsLeft <= 330 && secsLeft > 240) ? 1 : 0; // +1 near cutoff
-      const lateTighten5    = (sportIsBasketball(sport) && secsLeft <= 300) ? 1 : 0;                   // +1 in final 5:00
+      const tighten530to400 = (sportIsBasketball(sport) && secsLeft <= 330 && secsLeft > 240) ? 1 : 0;
+      const lateTighten5    = (sportIsBasketball(sport) && secsLeft <= 300) ? 1 : 0;
       const need = baseNeed + tighten530to400 + lateTighten5;
 
       let recClass = 'nogo', recText = 'NO-GO';
-
-      // DK cutoff guard for basketball
       if (sportIsBasketball(sport) && dkGuard && secsLeft <= 240) {
         recClass = 'nogo'; recText = 'NO-GO — DK window closed (< 4:00)';
       } else {
-        const probReq = (sportIsBasketball(sport) && secsLeft <= 300) ? 0.56 : 0.54; // stronger late
+        const probReq = (sportIsBasketball(sport) && secsLeft <= 300) ? 0.56 : 0.54;
         if (Math.abs(edgePts) >= need && pModel > probReq) {
           recClass='go'; recText='GO';
         } else if (Math.abs(edgePts) >= (need-1) && pModel > (probReq-0.02)) {
@@ -303,7 +323,7 @@
         }
       }
 
-      // --- WARNINGS ---
+      // --- Warnings ---
       const warnList = [];
       if (L < total) warnList.push("Book line below current total");
       if (volHigh)   warnList.push("High Volatility");
@@ -315,7 +335,7 @@
         console.log("Prep: DK shuts off at 4:00 — line up your click now.");
       }
 
-      // --- RENDER ---
+      // --- Render ---
       document.getElementById("out").style.display = "block";
       const banner = document.getElementById("banner");
       banner.className = 'banner ' + recClass;
@@ -324,14 +344,32 @@
       document.getElementById("curr_total").textContent = total.toFixed(0);
       document.getElementById("proj_total").textContent = projFinalAdj.toFixed(1);
       document.getElementById("edge_pts").textContent   = (edgePts>=0?'+':'') + edgePts.toFixed(1);
-
       document.getElementById("p_model").textContent    = (pModel*100).toFixed(1) + '%';
       document.getElementById("ev_pct").textContent     = evPct.toFixed(1) + '%';
       document.getElementById("stake").textContent      = '$' + (isFinite(stake)? stake.toFixed(2) : '0.00');
-
       document.getElementById("p_book").textContent     = pBook.toFixed(1) + '%';
       document.getElementById("sigma_rem").textContent  = sigma.toFixed(2);
       document.getElementById("warns").textContent      = warnList.length ? warnList.join(' | ') : '—';
+
+      // --- Debug panel ---
+      document.getElementById("dbg").style.display = debugOn ? 'block' : 'none';
+      if (debugOn){
+        renderDebug([
+          ['secs_left', secsLeft],
+          ['secs_played', secsPlay],
+          ['current_rate_pts/sec', (currentRatePS||0).toFixed(5)],
+          ['league_rate_pts/sec', (leagueRatePS||0).toFixed(5)],
+          ['blend_w', w.toFixed(3)],
+          ['proj_base_total', projBase.toFixed(3)],
+          ['remaining_base', remainingBase.toFixed(3)],
+          ['adj_factor', adjFactor.toFixed(3)],
+          ['proj_final_adj', projFinalAdj.toFixed(3)],
+          ['sigma', sigma.toFixed(3)],
+          ['z', z.toFixed(3)],
+          ['p_model', (pModel*100).toFixed(2)+'%'],
+          ['need_pts', need.toFixed(1)]
+        ]);
+      }
     });
   </script>
 </body>
