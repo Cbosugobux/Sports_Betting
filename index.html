@@ -1,389 +1,333 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Phoenix Picks — Final Score Calculator (vB)</title>
-<style>
-  :root{
-    --bg:#0f1115; --card:#171a21; --ink:#e9eef6; --muted:#9fb0c3;
-    --accent:#ff6a00; --good:#1ec28b; --warn:#ffb020; --bad:#ff5b6a;
-    --border:#232837;
-  }
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;}
-  .wrap{max-width:920px;margin:0 auto;padding:16px;}
-  h1{font-size:1.1rem;margin:8px 0 12px;letter-spacing:.2px}
-  .grid{display:grid;gap:12px}
-  @media(min-width:880px){ .grid-2{grid-template-columns:1fr 1fr} }
-  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
-  label{display:block;font-size:.86rem;margin:0 0 6px;color:var(--muted)}
-  input,select,button{width:100%;box-sizing:border-box}
-  input,select{
-    background:#0c0f14;border:1px solid var(--border);color:var(--ink);
-    border-radius:10px;padding:12px 12px;font-size:1rem;outline:none;
-  }
-  input:focus,select:focus{border-color:#2e374b}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .btn{background:var(--accent);border:none;color:white;border-radius:12px;padding:12px 14px;
-       font-weight:700;font-size:1rem;cursor:pointer}
-  .btn.secondary{background:#242a38;color:var(--ink);border:1px solid var(--border)}
-  .btn:active{transform:translateY(1px)}
-  .pill{display:inline-block;padding:6px 10px;border-radius:999px;font-size:.8rem;margin:0 6px 6px 0;border:1px solid var(--border);color:var(--muted)}
-  details{margin-top:6px}
-  summary{cursor:pointer;color:var(--muted);font-size:.92rem}
-  .out{display:grid;gap:10px}
-  .kpi{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .kpi .box{background:#0c0f14;border:1px solid var(--border);border-radius:12px;padding:12px}
-  .num{font-size:1.4rem;font-weight:800}
-  .good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
-  .tiny{font-size:.8rem;color:var(--muted)}
-  .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-  .sticky-actions{position:sticky;bottom:0;background:linear-gradient(180deg, rgba(15,17,21,0) 0%, rgba(15,17,21,0.95) 22%, rgba(15,17,21,1) 60%);padding:12px 0 4px}
-  .flex{display:flex;gap:10px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Phoenix Picks — Final Score Calculator (vB)</title>
+  <style>
+    :root {
+      --bg:#0d1117; --card:#161b22; --ink:#e6edf3; --muted:#8b949e; --accent:#f97316;
+      --good:#22c55e; --warn:#eab308; --bad:#ef4444;
+    }
+    *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+    body{margin:0;background:var(--bg);color:var(--ink)}
+    header{padding:12px 16px;border-bottom:1px solid #222}
+    h1{font-size:18px;margin:0}
+    .wrap{max-width:900px;margin:0 auto;padding:14px}
+    .card{background:var(--card);border:1px solid #222;border-radius:12px;padding:14px;margin-bottom:12px}
+    .row{display:grid;gap:10px}
+    @media(min-width:720px){.row.cols-2{grid-template-columns:1fr 1fr}}
+    label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+    input,select{width:100%;padding:10px;border-radius:8px;border:1px solid #30363d;background:#0b0f14;color:var(--ink)}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    .btn{display:inline-block;background:var(--accent);color:#111;padding:12px 16px;border-radius:10px;border:none;font-weight:700;width:100%;text-align:center;cursor:pointer}
+    .btn:active{transform:translateY(1px)}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;background:#0b0f14;border:1px solid #30363d;color:var(--muted)}
+    .kpi{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:6px}
+    .kpi > div{flex:1 1 150px;background:#0b0f14;border:1px solid #30363d;border-radius:10px;padding:10px}
+    .kpi h3{margin:0 0 6px 0;font-size:12px;color:var(--muted)}
+    .kpi .val{font-size:20px;font-weight:800}
+    .sub{font-size:12px;color:var(--muted)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>🦅 Phoenix Picks — Final Score & Total (Version B: Pace-Decay)</h1>
+  <header>
+    <h1>🦅 Phoenix Picks — Final Score Calculator (Version B)</h1>
+  </header>
 
-  <div class="grid grid-2">
+  <div class="wrap">
+    <!-- GAME META -->
     <div class="card">
-      <div class="row">
+      <div class="row cols-2">
         <div>
-          <label>Game Type</label>
-          <select id="gameType">
-            <option value="NBA">NBA (48:00)</option>
-            <option value="NCAAB" selected>NCAAB (40:00)</option>
-            <option value="WNBA">WNBA (40:00)</option>
-            <option value="Custom">Custom…</option>
+          <label>League Half Length (minutes)</label>
+          <input id="halfLen" type="number" inputmode="numeric" value="20" min="10" max="24" />
+        </div>
+        <div>
+          <label>Foul-Time Inflation (auto if close &lt;= 3:00)</label>
+          <select id="foulInflationMode">
+            <option value="auto" selected>Auto</option>
+            <option value="off">Off</option>
+            <option value="on">Force On</option>
           </select>
         </div>
-        <div id="customLenWrap" style="display:none;">
-          <label>Custom Game Length (minutes)</label>
-          <input id="customLen" type="number" step="1" min="20" value="40">
+      </div>
+      <div class="row cols-2" style="margin-top:8px">
+        <div>
+          <label>Home Team</label>
+          <input id="homeName" placeholder="Home" />
+        </div>
+        <div>
+          <label>Away Team</label>
+          <input id="awayName" placeholder="Away" />
         </div>
       </div>
+    </div>
 
-      <div class="row">
+    <!-- SCORING INPUTS -->
+    <div class="card">
+      <div class="grid-3">
         <div>
-          <label>Team A Name</label>
-          <input id="teamA" placeholder="Away / Team A" value="Team A">
+          <label>Home 1H Points</label>
+          <input id="h1" type="number" inputmode="numeric" value="0" />
         </div>
         <div>
-          <label>Team B Name</label>
-          <input id="teamB" placeholder="Home / Team B" value="Team B">
+          <label>Away 1H Points</label>
+          <input id="a1" type="number" inputmode="numeric" value="0" />
+        </div>
+        <div>
+          <label>Time Remaining 2H (mm:ss)</label>
+          <input id="tRemain" placeholder="12:34" />
         </div>
       </div>
-
-      <div class="row">
-        <div>
-          <label>Score — Team A</label>
-          <input id="scoreA" type="number" inputmode="numeric" min="0" value="31">
+      <div class="grid-2" style="margin-top:10px">
+        <div class="card" style="padding:10px">
+          <div class="grid-3">
+            <div>
+              <label>Home 2H Points (so far)</label>
+              <input id="h2" type="number" inputmode="numeric" value="0" />
+            </div>
+            <div>
+              <label>Away 2H Points (so far)</label>
+              <input id="a2" type="number" inputmode="numeric" value="0" />
+            </div>
+            <div>
+              <label>Stabilizer (min for full live weight)</label>
+              <input id="stab" type="number" inputmode="numeric" value="8" />
+            </div>
+          </div>
+          <div class="sub" style="margin-top:6px">
+            Blended pace per team: rate = α·(2H live rate) + (1−α)·(1H rate), where α = clamp(elapsed / stabilizer, 0–1).
+          </div>
         </div>
-        <div>
-          <label>Score — Team B</label>
-          <input id="scoreB" type="number" inputmode="numeric" min="0" value="28">
+        <div class="card" style="padding:10px">
+          <div class="grid-3">
+            <div>
+              <label>Custom Pace Floor (pts/min)</label>
+              <input id="paceFloor" type="number" step="0.01" value="0" />
+            </div>
+            <div>
+              <label>Custom Pace Cap (pts/min)</label>
+              <input id="paceCap" type="number" step="0.01" value="10" />
+            </div>
+            <div>
+              <label>Overtime?</label>
+              <select id="otMode">
+                <option value="no" selected>No</option>
+                <option value="yes">Add 5:00 OT</option>
+              </select>
+            </div>
+          </div>
+          <div class="sub" style="margin-top:6px">
+            Optional guardrails for extreme early samples; OT adds 5:00 at blended pace (no decay).
+          </div>
         </div>
       </div>
+    </div>
 
-      <div class="row">
+    <!-- DECAY TABLE DESCRIPTION -->
+    <div class="card">
+      <div class="sub">
+        <b>Spread-Based Decay (asymmetric):</b> leader slows, trailer speeds up. Bins by current margin (abs):
+        <span class="pill">0–4</span> <span class="pill">5–9</span> <span class="pill">10–14</span> <span class="pill">15–19</span> <span class="pill">20+</span>
+        and by time left: <span class="pill">&gt;10:00</span>, <span class="pill">5–10:00</span>, <span class="pill">&lt;5:00</span>.
+        Late-game foul inflation if close (≤5) and ≤3:00 (auto).
+      </div>
+    </div>
+
+    <!-- ACTION -->
+    <div class="card">
+      <button class="btn" id="runBtn">Compute Projection</button>
+    </div>
+
+    <!-- RESULTS -->
+    <div class="card" id="results" style="display:none">
+      <div class="kpi">
         <div>
-          <label>Time Remaining in Game (MM:SS)</label>
-          <input id="timeLeft" placeholder="e.g., 10:30" value="18:00">
+          <h3>Projected Final — <span id="homeLbl"></span></h3>
+          <div class="val" id="homeProj">—</div>
+          <div class="sub mono" id="homeDetail"></div>
         </div>
         <div>
-          <label>Live Total Line (optional)</label>
-          <input id="liveLine" type="number" step="0.5" placeholder="e.g., 141.5">
+          <h3>Projected Final — <span id="awayLbl"></span></h3>
+          <div class="val" id="awayProj">—</div>
+          <div class="sub mono" id="awayDetail"></div>
+        </div>
+        <div>
+          <h3>Projected Total</h3>
+          <div class="val" id="totProj">—</div>
+          <div class="sub mono" id="totDetail"></div>
+        </div>
+        <div>
+          <h3>Live Spread (Home − Away)</h3>
+          <div class="val" id="spreadLive">—</div>
+          <div class="sub mono" id="spreadDetail"></div>
         </div>
       </div>
+    </div>
 
+    <!-- DEBUG (collapsible) -->
+    <div class="card">
       <details>
-        <summary>Advanced Settings</summary>
-        <div class="row-3" style="margin-top:10px">
-          <div>
-            <label>League Avg Total (priors)</label>
-            <input id="leagueAvgTotal" type="number" step="0.5" value="141.0">
-            <div class="tiny">NCAAB typical ~ 140–144 | NBA ~ 228–234</div>
-          </div>
-          <div>
-            <label>Live Weight (0–1)</label>
-            <input id="liveWeight" type="number" min="0" max="1" step="0.05" value="0.70">
-            <div class="tiny">How much to trust current pace vs priors</div>
-          </div>
-          <div>
-            <label>Decay Strength (−0.5 to +0.5)</label>
-            <input id="decay" type="number" min="-0.5" max="0.5" step="0.01" value="0.15">
-            <div class="tiny">Positive = pace slows late; negative = late scoring surge</div>
-          </div>
-        </div>
-
-        <div class="row-3" style="margin-top:10px">
-          <div>
-            <label>Endgame Boost % (0–50)</label>
-            <input id="endgameBoost" type="number" min="0" max="50" step="1" value="8">
-            <div class="tiny">Applied if margin ≤ 6 & time ≤ 3:00</div>
-          </div>
-          <div>
-            <label>Blowout Damp % (0–50)</label>
-            <input id="blowoutDamp" type="number" min="0" max="50" step="1" value="10">
-            <div class="tiny">Applied if margin ≥ 15 & time ≤ 6:00</div>
-          </div>
-          <div>
-            <label>Team Split Prior (0–1)</label>
-            <input id="splitPrior" type="number" min="0" max="1" step="0.05" value="0.30">
-            <div class="tiny">Blend current scoring share with 50/50 split</div>
-          </div>
-        </div>
+        <summary class="sub">Show math details</summary>
+        <pre class="mono" id="debug" style="white-space:pre-wrap;font-size:12px"></pre>
       </details>
-
-      <div class="sticky-actions">
-        <div class="flex">
-          <button class="btn" id="calcBtn">Calculate Projection</button>
-          <button class="btn secondary" id="resetBtn">Reset</button>
-        </div>
-        <div style="margin-top:8px">
-          <span class="pill">Version B: pace-decay</span>
-          <span class="pill">Endgame fouls logic</span>
-          <span class="pill">Blowout throttle</span>
-        </div>
-      </div>
     </div>
 
-    <div class="card out" id="output">
-      <div class="kpi">
-        <div class="box">
-          <div class="tiny">Projected Final Total</div>
-          <div class="num" id="projTotal">—</div>
-          <div class="tiny" id="ppmNote">PPM: — (blend w/ decay)</div>
-        </div>
-        <div class="box">
-          <div class="tiny">Projected Final Score</div>
-          <div class="num" id="projScore">—</div>
-          <div class="tiny" id="margin">Spread: —</div>
-        </div>
-      </div>
-
-      <div class="kpi">
-        <div class="box">
-          <div class="tiny">Model Edge vs Line</div>
-          <div class="num" id="edge">—</div>
-          <div class="tiny">Positive = Over edge, Negative = Under edge</div>
-        </div>
-        <div class="box">
-          <div class="tiny">Status</div>
-          <div class="num" id="status">Awaiting input…</div>
-          <div class="tiny" id="flags">—</div>
-        </div>
-      </div>
-
-      <div class="box" style="background:#0c0f14;border:1px dashed var(--border);border-radius:12px">
-        <div class="tiny">Notes</div>
-        <div id="notes" style="margin-top:6px;color:var(--muted);line-height:1.4">Use Advanced Settings to tune priors/decay to the league and matchup.</div>
-      </div>
-    </div>
   </div>
-</div>
 
 <script>
-(function(){
-  const $ = id => document.getElementById(id);
+function toSec(mmss){
+  if(!mmss) return 0;
+  const p = mmss.split(":").map(x=>parseInt(x||"0",10));
+  if(p.length===1) return (p[0]||0)*60;
+  return (p[0]||0)*60 + (p[1]||0);
+}
 
-  const defaultsByGame = {
-    NBA:  { len:48, leagueAvgTotal:232 },
-    NCAAB:{ len:40, leagueAvgTotal:141 },
-    WNBA: { len:40, leagueAvgTotal:164 }
+function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+
+function decayMultiplier(absMargin, minLeft, leader){
+  // Asymmetric multipliers: leader slows (negative), trailer speeds (positive)
+  // Bins by margin and time left (tuned conservative defaults)
+  const bins = [
+    {m:[0,4],  gt10:{lead:-0.00, trail:+0.01}, m5_10:{lead:-0.03, trail:+0.02}, lt5:{lead:-0.05, trail:+0.04}},
+    {m:[5,9],  gt10:{lead:-0.02, trail:+0.03}, m5_10:{lead:-0.06, trail:+0.05}, lt5:{lead:-0.09, trail:+0.08}},
+    {m:[10,14],gt10:{lead:-0.04, trail:+0.05}, m5_10:{lead:-0.09, trail:+0.08}, lt5:{lead:-0.13, trail:+0.12}},
+    {m:[15,19],gt10:{lead:-0.06, trail:+0.07}, m5_10:{lead:-0.12, trail:+0.10}, lt5:{lead:-0.16, trail:+0.14}},
+    {m:[20,99],gt10:{lead:-0.08, trail:+0.09}, m5_10:{lead:-0.16, trail:+0.12}, lt5:{lead:-0.20, trail:+0.16}},
+  ];
+  let bucket = bins.find(b => absMargin>=b.m[0] && absMargin<=b.m[1]) || bins[0];
+  let tkey = (minLeft>10) ? "gt10" : (minLeft>=5 ? "m5_10" : "lt5");
+  const mult = leader ? bucket[tkey].lead : bucket[tkey].trail;
+  return 1 + mult; // return multiplicative factor
+}
+
+function foulInflation(absMargin, minLeft, mode){
+  if(mode==="off") return 1.0;
+  if(mode==="on") return 1.06;
+  // auto: only when close late
+  if(absMargin<=5 && minLeft<=3) return 1.06;
+  return 1.0;
+}
+
+function fmt(n){ return Number.isFinite(n) ? n.toFixed(1) : "—"; }
+
+document.getElementById('runBtn').addEventListener('click', () => {
+  const halfLen = parseFloat(document.getElementById('halfLen').value||"20");
+  const tRemain = toSec(document.getElementById('tRemain').value||"0:00");
+  const minLeft = tRemain/60;
+  const elapsed = Math.max(0, halfLen - minLeft);
+
+  const H1 = parseFloat(document.getElementById('h1').value||"0");
+  const A1 = parseFloat(document.getElementById('a1').value||"0");
+  const H2 = parseFloat(document.getElementById('h2').value||"0");
+  const A2 = parseFloat(document.getElementById('a2').value||"0");
+
+  const homeName = (document.getElementById('homeName').value||"Home").trim();
+  const awayName = (document.getElementById('awayName').value||"Away").trim();
+
+  const stabMin = parseFloat(document.getElementById('stab').value||"8");
+  const paceFloor = parseFloat(document.getElementById('paceFloor').value||"0");
+  const paceCap = parseFloat(document.getElementById('paceCap').value||"10");
+  const otMode = document.getElementById('otMode').value;
+  const foulMode = document.getElementById('foulInflationMode').value;
+
+  // Guard against zero elapsed to avoid div/0
+  const epsElapsed = Math.max(0.5, elapsed); // minimum 30s elapsed to stabilize ultra-early
+
+  // First-half per-minute pace per team
+  const baseRateH = H1 / halfLen;
+  const baseRateA = A1 / halfLen;
+
+  // Live second-half per-minute pace per team (so far)
+  const liveRateH = H2 / epsElapsed;
+  const liveRateA = A2 / epsElapsed;
+
+  // Blended rate: α increases with elapsed minutes, capped by stabilizer
+  const alpha = clamp(epsElapsed / Math.max(1, stabMin), 0, 1);
+  let blendH = alpha*liveRateH + (1-alpha)*baseRateH;
+  let blendA = alpha*liveRateA + (1-alpha)*baseRateA;
+
+  // Apply floor/cap guardrails
+  blendH = clamp(blendH, paceFloor, paceCap);
+  blendA = clamp(blendA, paceFloor, paceCap);
+
+  // Current totals and margin
+  const homeNow = H1 + H2;
+  const awayNow = A1 + A2;
+  const margin = homeNow - awayNow;
+  const absMargin = Math.abs(margin);
+
+  // Asymmetric decay multipliers per team on remaining minutes
+  const leaderIsHome = margin > 0;
+  const multH = decayMultiplier(absMargin, minLeft, leaderIsHome);
+  const multA = decayMultiplier(absMargin, minLeft, !leaderIsHome);
+
+  // Remaining minutes (may include OT later)
+  let rem = minLeft;
+
+  // Foul inflation is applied on top of decay to the combined remaining chunk
+  const foulMult = foulInflation(absMargin, minLeft, foulMode);
+
+  // Project remaining points by team with decay
+  const remainH = Math.max(0, rem) * blendH * multH;
+  const remainA = Math.max(0, rem) * blendA * multA;
+
+  // If OT chosen, add 5 minutes at blended pace (no decay / no foul bump)
+  let otH = 0, otA = 0;
+  if(otMode==="yes"){
+    otH = 5 * blendH;
+    otA = 5 * blendA;
+  }
+
+  // Apply foul inflation to remaining (not to what has already happened or OT chunk)
+  const remainH_f = remainH * foulMult;
+  const remainA_f = remainA * foulMult;
+
+  const homeProj = homeNow + remainH_f + otH;
+  const awayProj = awayNow + remainA_f + otA;
+  const totalProj = homeProj + awayProj;
+
+  // OUTPUT
+  document.getElementById('results').style.display = "block";
+  document.getElementById('homeLbl').innerText = homeName;
+  document.getElementById('awayLbl').innerText = awayName;
+
+  document.getElementById('homeProj').innerText = fmt(homeProj);
+  document.getElementById('awayProj').innerText = fmt(awayProj);
+  document.getElementById('totProj').innerText  = fmt(totalProj);
+
+  document.getElementById('spreadLive').innerText = (margin>=0?"+":"") + margin.toFixed(1);
+  document.getElementById('spreadDetail').innerText =
+    `Now: ${homeNow}-${awayNow} (${homeName} ${margin>=0?"+":""}${margin.toFixed(1)}) • Elapsed 2H: ${epsElapsed.toFixed(1)}m`;
+
+  document.getElementById('homeDetail').innerText =
+    `1H rate ${baseRateH.toFixed(2)}/m • 2H live ${liveRateH.toFixed(2)}/m • α=${alpha.toFixed(2)} • decay×${multH.toFixed(2)} • foul×${foulMult.toFixed(2)} • OT+${otH?otH.toFixed(1):"0"}`;
+  document.getElementById('awayDetail').innerText =
+    `1H rate ${baseRateA.toFixed(2)}/m • 2H live ${liveRateA.toFixed(2)}/m • α=${alpha.toFixed(2)} • decay×${multA.toFixed(2)} • foul×${foulMult.toFixed(2)} • OT+${otA?otA.toFixed(1):"0"}`;
+  document.getElementById('totDetail').innerText =
+    `Remain H ${remainH_f.toFixed(1)} + Remain A ${remainA_f.toFixed(1)} ${otMode==="yes"?"+ OT":" "} `;
+
+  // DEBUG
+  const dbg = {
+    inputs:{
+      halfLen, tRemain: document.getElementById('tRemain').value, elapsed: epsElapsed,
+      H1,A1,H2,A2, homeName, awayName, stabMin, paceFloor, paceCap, otMode, foulMode
+    },
+    baseRates:{home:baseRateH, away:baseRateA},
+    liveRates:{home:liveRateH, away:liveRateA},
+    blended:{home:blendH, away:blendA, alpha},
+    state:{homeNow, awayNow, margin, absMargin, minLeft},
+    decayMultipliers:{home:multH, away:multA},
+    foulMultiplier:foulMult,
+    remain:{home:remainH_f, away:remainA_f},
+    ot:{home:otH, away:otA},
+    projections:{home:homeProj, away:awayProj, total:totalProj}
   };
-
-  const gameTypeEl = $("gameType");
-  const customLenWrap = $("customLenWrap");
-  const customLenEl = $("customLen");
-  const leagueAvgTotalEl = $("leagueAvgTotal");
-
-  function applyGameType(){
-    const t = gameTypeEl.value;
-    if(t==="Custom"){
-      customLenWrap.style.display = "block";
-    } else {
-      customLenWrap.style.display = "none";
-      const d = defaultsByGame[t];
-      if(d){
-        leagueAvgTotalEl.value = d.leagueAvgTotal;
-        // only set length if user hasn’t custom-edited
-        if(!localStorage.getItem("pp_vb_len_custom")){
-          customLenEl.value = d.len;
-        }
-      }
-    }
-    persist();
-  }
-  gameTypeEl.addEventListener("change", applyGameType);
-  applyGameType();
-
-  function parseTimeMMSS(s){
-    if(!s) return null;
-    const parts = s.split(":");
-    if(parts.length!==2) return null;
-    const m = parseInt(parts[0],10);
-    const sec = parseInt(parts[1],10);
-    if(Number.isNaN(m)||Number.isNaN(sec)||sec<0||sec>=60||m<0) return null;
-    return m + sec/60;
-  }
-
-  function clamp(x, lo, hi){ return Math.max(lo, Math.min(hi, x)); }
-
-  function calcProjection(){
-    // inputs
-    const teamA = $("teamA").value.trim() || "Team A";
-    const teamB = $("teamB").value.trim() || "Team B";
-    const A = parseFloat($("scoreA").value) || 0;
-    const B = parseFloat($("scoreB").value) || 0;
-    const totalSoFar = A + B;
-
-    const tStr = $("timeLeft").value.trim();
-    const minsLeft = parseTimeMMSS(tStr);
-    if(minsLeft===null){ return showStatus("Please enter Time Remaining as MM:SS","bad"); }
-
-    const gt = gameTypeEl.value;
-    const gameLen = (gt==="Custom" ? (parseFloat(customLenEl.value)||40) :
-                    (defaultsByGame[gt]?.len || 40));
-
-    const elapsed = clamp(gameLen - minsLeft, 0, gameLen);
-    const fracElapsed = (gameLen>0)? (elapsed / gameLen) : 0;
-
-    const leagueAvgTotal = parseFloat(leagueAvgTotalEl.value)|| (defaultsByGame[gt]?.leagueAvgTotal || 140);
-    const liveWeight = clamp(parseFloat($("liveWeight").value)||0.7, 0, 1);
-    const decay = clamp(parseFloat($("decay").value)||0.15, -0.5, 0.5);
-    const endgameBoost = clamp((parseFloat($("endgameBoost").value)||8)/100, 0, 0.5);
-    const blowoutDamp  = clamp((parseFloat($("blowoutDamp").value)||10)/100, 0, 0.5);
-    const splitPrior   = clamp(parseFloat($("splitPrior").value)||0.3, 0, 1);
-
-    // priors & observed pace
-    const priorPPM = leagueAvgTotal / gameLen;                   // combined points per minute prior
-    const obsPPM   = (elapsed>0) ? (totalSoFar / elapsed) : priorPPM;
-
-    // blend observed with prior
-    const blendedPPM = (1-liveWeight)*priorPPM + liveWeight*obsPPM;
-
-    // pace-decay multiplier (Version B)
-    // remaining PPM = blendedPPM * (1 - decay * fracElapsed)
-    //  - decay>0 slows pace as game progresses
-    //  - decay<0 speeds it up
-    let remainPPM = blendedPPM * (1 - decay * fracElapsed);
-
-    // endgame / blowout adjustments
-    const margin = Math.abs(A-B);
-    let flags = [];
-    if(minsLeft <= 3 && margin <= 6){
-      remainPPM *= (1 + endgameBoost);
-      flags.push(`Endgame boost +${Math.round(endgameBoost*100)}%`);
-    }
-    if(minsLeft <= 6 && margin >= 15){
-      remainPPM *= (1 - blowoutDamp);
-      flags.push(`Blowout damp −${Math.round(blowoutDamp*100)}%`);
-    }
-
-    // project remaining points
-    const ptsRemaining = Math.max(0, remainPPM * minsLeft);
-    const projTotal = totalSoFar + ptsRemaining;
-
-    // split remaining between teams
-    const curShareA = totalSoFar>0 ? (A/totalSoFar) : 0.5;
-    const curShareB = 1 - curShareA;
-    const adjShareA = splitPrior*0.5 + (1-splitPrior)*curShareA;
-    const adjShareB = 1 - adjShareA;
-
-    const projA = A + adjShareA * ptsRemaining;
-    const projB = B + adjShareB * ptsRemaining;
-    const spread = (projA - projB);
-
-    // vs live line edge
-    const lineVal = parseFloat($("liveLine").value);
-    let edgeText = "—", edgeClass = "";
-    if(!Number.isNaN(lineVal)){
-      const edge = projTotal - lineVal; // positive => model likes OVER
-      edgeText = `${edge>0?'+':''}${edge.toFixed(1)} vs ${lineVal.toFixed(1)}`;
-      edgeClass = edge>1.0 ? "good" : (edge<-1.0 ? "bad" : "warn");
-    }
-
-    // paint UI
-    $("projTotal").textContent = projTotal.toFixed(1);
-    $("ppmNote").textContent = `PPM prior=${priorPPM.toFixed(2)} | live=${obsPPM.toFixed(2)} | blended=${blendedPPM.toFixed(2)} → remaining=${remainPPM.toFixed(2)}`;
-    $("projScore").textContent = `${teamA} ${projA.toFixed(0)} — ${projB.toFixed(0)} ${teamB}`;
-    $("margin").textContent = `Spread (A−B): ${spread>=0?'+':''}${spread.toFixed(1)}`;
-
-    const edgeEl = $("edge");
-    edgeEl.textContent = edgeText;
-    edgeEl.className = "num " + edgeClass;
-
-    $("status").textContent = "Projection ready";
-    $("flags").textContent = flags.length? flags.join(" • ") : "—";
-
-    $("notes").textContent = "Tune Live Weight to trust real game pace more/less. Positive decay slows late; negative decay anticipates late scoring surges (press + fouls). Endgame/Blowout rules auto-adjust remaining PPM.";
-
-    persist();
-  }
-
-  function showStatus(msg, type){
-    $("status").textContent = msg;
-    $("status").className = "num " + (type||"");
-  }
-
-  function resetAll(){
-    localStorage.removeItem("pp_vb_state");
-    $("teamA").value="Team A"; $("teamB").value="Team B";
-    $("scoreA").value=31; $("scoreB").value=28;
-    $("timeLeft").value="18:00";
-    $("liveLine").value="";
-    $("gameType").value="NCAAB"; applyGameType();
-    $("leagueAvgTotal").value=141; $("liveWeight").value=0.70; $("decay").value=0.15;
-    $("endgameBoost").value=8; $("blowoutDamp").value=10; $("splitPrior").value=0.30;
-    $("projTotal").textContent="—"; $("ppmNote").textContent="PPM: — (blend w/ decay)";
-    $("projScore").textContent="—"; $("margin").textContent="Spread: —";
-    $("edge").textContent="—"; $("edge").className="num";
-    $("status").textContent="Awaiting input…"; $("status").className="num";
-    $("flags").textContent="—"; $("notes").textContent="Use Advanced Settings to tune priors/decay to the league and matchup.";
-  }
-
-  // persistence
-  function persist(){
-    const state = {
-      gameType: $("gameType").value,
-      customLen: $("customLen").value,
-      teamA: $("teamA").value, teamB: $("teamB").value,
-      scoreA: $("scoreA").value, scoreB: $("scoreB").value,
-      timeLeft: $("timeLeft").value, liveLine: $("liveLine").value,
-      leagueAvgTotal: $("leagueAvgTotal").value, liveWeight: $("liveWeight").value,
-      decay: $("decay").value, endgameBoost: $("endgameBoost").value,
-      blowoutDamp: $("blowoutDamp").value, splitPrior: $("splitPrior").value
-    };
-    localStorage.setItem("pp_vb_state", JSON.stringify(state));
-    if($("gameType").value==="Custom"){ localStorage.setItem("pp_vb_len_custom","1"); }
-    else { localStorage.removeItem("pp_vb_len_custom"); }
-  }
-  function restore(){
-    const raw = localStorage.getItem("pp_vb_state");
-    if(!raw) return;
-    try{
-      const s = JSON.parse(raw);
-      for(const k of Object.keys(s)){
-        const el = $(k);
-        if(el) el.value = s[k];
-      }
-      applyGameType();
-    }catch(e){}
-  }
-  restore();
-
-  $("calcBtn").addEventListener("click", calcProjection);
-  $("resetBtn").addEventListener("click", resetAll);
-
-  // mobile nicety: calculate whenever key fields change
-  ["scoreA","scoreB","timeLeft","liveLine","leagueAvgTotal","liveWeight","decay","endgameBoost","blowoutDamp","splitPrior","customLen","teamA","teamB"]
-    .forEach(id => $(id).addEventListener("change", () => { persist(); calcProjection(); }));
-
-  // first pass
-  calcProjection();
-})();
+  document.getElementById('debug').innerText = JSON.stringify(dbg, null, 2);
+});
 </script>
 </body>
 </html>
